@@ -1,27 +1,24 @@
 // firelocserver.js - Main server file for FireLoc cloud service
 
-const express = require('express'); // framework for web servers
-const http = require('http'); // creates actual server 
-const socketIo = require('socket.io'); // web apps to server real time communication 
-const multer = require('multer'); // middleware for file uploads in nodejs
-const fs = require('fs'); // filesys --. read/write manipulate files/dir
+const express = require('express');
+const http = require('http'); 
+const socketIo = require('socket.io'); 
+const multer = require('multer'); 
+const fs = require('fs');
 const path = require('path'); 
-const cors = require('cors'); //security implemented by browser; prevents malicious websites from accessing server while allowing access from web to api requests
+const cors = require('cors'); 
 const { processImage, detectFire } = require('./fireDetection');
 const { geolocateFireFromImage } = require('./fireGeolocation');
 const { notifyUsers, updateFireMap } = require('./alertSystem');
 
-// Initialize express app
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Storage configuration for uploaded images
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         const id = req.body.deviceId;
@@ -57,16 +54,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Memory storage for real-time streaming
+// mem storage for real-time streaming
 const memStorage = multer.memoryStorage();
 const memUpload = multer({ storage: memStorage });
 
-// Routes
 app.post('/api/upload', upload.single('image'), async (req, res) => {
     try {
         console.log('Upload request received from device:', req.body.deviceId);
         
-        // Extract metadata
         const metadata = {
             deviceId: req.body.deviceId,
             latitude: parseFloat(req.body.latitude),
@@ -75,17 +70,14 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
             timestamp: Date.now()
         };
         
-        // Save metadata
         const metadataPath = path.join(path.dirname(req.file.path), 'metadata.json');
         fs.writeFileSync(metadataPath, JSON.stringify(metadata));
         
-        // Process the image for fire detection if not already detected on device
         let fireDetected = req.body.fireDetected === '1';
         let fireConfidence = 0;
         let fireBoundingBox = null;
         
         if (!fireDetected) {
-            // Run server-side fire detection
             const detectionResult = await detectFire(req.file.path);
             fireDetected = detectionResult.detected;
             fireConfidence = detectionResult.confidence;
@@ -96,9 +88,9 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
                         'Confidence:', fireConfidence);
         }
         
-        // If fire is detected, perform geolocation
+        // if fire detected perform geolocation
         let fireLocation = null;
-        if (fireDetected && fireConfidence > 0.5) {  // Use threshold for confidence
+        if (fireDetected && fireConfidence > 0.5) {  // threshold for confidence
             fireLocation = await geolocateFireFromImage(
                 req.file.path,
                 metadata.latitude,
@@ -107,7 +99,6 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
                 fireBoundingBox
             );
             
-            // Update fire map and notify users
             if (fireLocation) {
                 updateFireMap({
                     location: fireLocation,
@@ -117,10 +108,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
                     imagePath: req.file.path
                 });
                 
-                // Notify users in the area
                 notifyUsers(fireLocation);
                 
-                // Broadcast to all connected clients via Socket.IO
                 io.emit('fireAlert', {
                     location: fireLocation,
                     confidence: fireConfidence,
@@ -130,7 +119,6 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
             }
         }
         
-        // Send response back to the device
         res.json({
             success: true,
             fireDetected: fireDetected,
@@ -147,16 +135,13 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     }
 });
 
-// Route for real-time streaming
 app.post('/api/stream', memUpload.single('image'), (req, res) => {
     try {
         console.log('Stream request received from device:', req.body.deviceId);
         
-        // Process streamed image
         const imageBuffer = req.file.buffer;
         const encodedImage = imageBuffer.toString('base64');
         
-        // Broadcast the image to connected clients
         io.emit('streamImage', {
             deviceId: req.body.deviceId,
             image: encodedImage,
@@ -173,11 +158,9 @@ app.post('/api/stream', memUpload.single('image'), (req, res) => {
     }
 });
 
-// Route to get current fire data
 app.get('/api/fires', (req, res) => {
     try {
-        // Get the latest fire data from our storage
-        // This would typically come from a database or cache
+        // get latest fire data from our storage
         const fireData = require('./data/currentFires.json');
         res.json(fireData);
     } catch (error) {
@@ -189,7 +172,6 @@ app.get('/api/fires', (req, res) => {
     }
 });
 
-// Socket.IO connection handler
 io.on('connection', (socket) => {
     console.log('New client connected');
     
@@ -198,7 +180,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// Start the server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`FireLoc server running on port ${PORT}`);
