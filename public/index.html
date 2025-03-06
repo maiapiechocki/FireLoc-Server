@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FireLoc Monitoring System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        #map {
+            height: 500px;
+            width: 100%;
+            background-color: #f0f0f0;
+            margin-bottom: 20px;
+        }
+        .fire-alert {
+            background-color: #ffdddd;
+            border-left: 6px solid #f44336;
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>FireLoc Monitoring System</h1>
+    
+    <div id="map">
+        <p>Map will be displayed here</p>
+    </div>
+    
+    <h2>Live Fire Alerts</h2>
+    <div id="alerts">
+        <p>No active fire alerts</p>
+    </div>
+    
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Connect to the server
+        const socket = io();
+        
+        // Listen for fire alerts
+        socket.on('fireAlert', function(data) {
+            console.log('Fire alert received:', data);
+            
+            // Create alert element
+            const alertDiv = document.createElement('div');
+            alertDiv.className = 'fire-alert';
+            
+            const timestamp = new Date(data.timestamp).toLocaleString();
+            alertDiv.innerHTML = `
+                <h3>FIRE DETECTED!</h3>
+                <p>Location: ${data.location.latitude.toFixed(6)}, ${data.location.longitude.toFixed(6)}</p>
+                <p>Confidence: ${(data.confidence * 100).toFixed(1)}%</p>
+                <p>Time: ${timestamp}</p>
+                <p>Detected by: ${data.detectedBy}</p>
+            `;
+            
+            // Add to alerts container
+            const alertsContainer = document.getElementById('alerts');
+            alertsContainer.innerHTML = ''; // Clear "No active alerts" message
+            alertsContainer.prepend(alertDiv);
+        });
+    </script>
+</body>
+</html>
