@@ -1,14 +1,14 @@
-// fireGeolocation.js - Handles fire geolocation calculations
+// fireGeolocation.js - fire geolocation calculations
 
 async function geolocateFireFromImage(imagePath, deviceLat, deviceLng, orientation, boundingBox) {
     console.log(`Geolocating fire from image: ${imagePath}`);
     console.log(`Device location: ${deviceLat}, ${deviceLng}`);
     console.log(`Device orientation:`, orientation);
     
-    // This is where you'd implement your geolocation algorithm
-    // For now, return a mock location near the device
+    // geolocation algorithm
+    // placeholder mock location near the device
     
-    // Simple offset based on bounding box position (mock calculation)
+    // simple offset based on bounding box position (mock calculation)
     const offsetLat = (boundingBox.y / 1000) * 0.01;
     const offsetLng = (boundingBox.x / 1000) * 0.01;
     
