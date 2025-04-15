@@ -1,0 +1,108 @@
+# gradle/libs.versions.toml
+
+[versions]
+# Android Build & Base
+# Removed compileSdk, minSdk, targetSdk as they are likely set directly in app/build.gradle.kts
+agp = "8.4.2" # Kept your version
+kotlin = "2.0.21" # Kept your version
+
+# AndroidX Core & UI (Updated based on warnings)
+coreKtx = "1.16.0" # Kept your version (assuming it's intentional, or update if needed)
+appcompat = "1.7.0" # Kept your version
+constraintlayout = "2.2.1" # Kept your version
+activityKtx = "1.10.1" # Updated from 1.9.1 based on warning
+lifecycleRuntimeKtx = "2.8.7" # Kept your version
+
+# CameraX (Updated based on warnings)
+camerax = "1.4.2" # Updated from 1.3.4 based on warnings
+
+# Firebase (Updated based on warnings)
+firebaseBom = "33.12.0" # Updated from 33.2.0 based on warning
+# Versions for auth, firestore, functions etc. are managed by the BOM
+
+# Google Play Services (Updated based on warnings)
+playServicesAuth = "21.3.0" # Updated from 21.2.0 based on warning
+
+# Networking
+retrofit = "2.11.0" # Kept your version
+converterGson = "2.11.0" # Match retrofit version
+loggingInterceptor = "4.12.0" # Kept your version
+
+# Coroutines
+kotlinxCoroutines = "1.8.1" # Kept your version
+
+# ONNX Runtime
+onnxruntime = "1.18.0" # Kept your version
+
+# Testing
+junit = "4.13.2"
+androidxJunit = "1.2.1"
+espressoCore = "3.6.1"
+
+# Plugins
+googleGmsServicesPlugin = "4.4.2" # Kept your version
+
+# Compose (if used)
+# composeBom = "2024.06.00"
+# activityCompose = "1.9.0"
+# composeCompiler = "1.5.10"
+
+[libraries]
+# AndroidX Core & UI
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version.ref = "constraintlayout" }
+androidx-activity-ktx = { group = "androidx.activity", name = "activity-ktx", version.ref = "activityKtx"}
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+
+# CameraX - Ensure all use the updated 'camerax' version ref
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+
+# Firebase
+firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
+firebase-auth-ktx = { group = "com.google.firebase", name = "firebase-auth-ktx" } # Version from BOM
+# Commented out unused aliases:
+# firebase-firestore-ktx = { group = "com.google.firebase", name = "firebase-firestore-ktx" }
+# firebase-functions-ktx = { group = "com.google.firebase", name = "firebase-functions-ktx" }
+
+# Google Play Services
+play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
+
+# Networking
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+converter-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "converterGson" }
+logging-interceptor = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "loggingInterceptor" }
+
+# Coroutines
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutines" }
+
+# ONNX Runtime
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
+# onnxruntime-gpu = { group = "com.microsoft.onnxruntime", name = "onnxruntime-gpu", version.ref = "onnxruntime" } # Optional GPU delegate
+
+# Testing
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+
+# Compose UI (Keep commented if not needed)
+# androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+# androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+# androidx-ui = { group = "androidx.compose.ui", name = "ui" }
+# androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+# androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+# androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+# androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+# androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+# androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+
+
+[plugins]
+androidApplication = { id = "com.android.application", version.ref = "agp" }
+kotlinAndroid = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+googleGmsServices = { id = "com.google.gms.google-services", version.ref = "googleGmsServicesPlugin" }
+# kotlinCompose = { id = "org.jetbrains.kotlin.compose", version.ref = "kotlin" }
+# composeCompiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "composeCompiler" }

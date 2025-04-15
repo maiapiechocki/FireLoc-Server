@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "498459726219",
+    "project_id": "fireloc-e68b0",
+    "storage_bucket": "fireloc-e68b0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:498459726219:android:1dff506e912dd6a6b01f8e",
+        "android_client_info": {
+          "package_name": "com.FireLoc.Fireloc"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "498459726219-4n5v3ahpg384akn80kf9pvh1tha7drps.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBQEsZnwXOyxE7RciUS75htS2aK3muwdMM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "498459726219-4n5v3ahpg384akn80kf9pvh1tha7drps.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
