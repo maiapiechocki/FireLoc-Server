@@ -2,9 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.fireloc.fireloc">
 
+    <!-- Permissions already present -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!-- **** ADDED: Required for network calls to Firebase and your backend **** -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <uses-feature android:name="android.hardware.camera" android:required="true" />
 
     <application
@@ -13,7 +18,8 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.FireLoc">
+        android:theme="@style/Theme.FireLoc"
+        android:usesCleartextTraffic="true"> <!-- Added for testing HTTP if needed, remove for production HTTPS -->
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -23,4 +29,5 @@
             </intent-filter>
         </activity>
     </application>
+
 </manifest>

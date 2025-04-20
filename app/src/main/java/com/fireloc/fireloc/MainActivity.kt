@@ -1,15 +1,9 @@
-package com.fireloc.fireloc // Ensure this matches your package name exactly
+package com.fireloc.fireloc
 
-// ** Crucial: Ensure this import matches your package name **
-import com.fireloc.fireloc.R
-
-// Other required imports (Alphabetical order helps)
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Activity
+// **** ADDED MISSING IMPORT ****
 import android.content.Context
-import android.content.Intent
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.Matrix
 import android.graphics.RectF
@@ -32,48 +26,47 @@ import com.fireloc.fireloc.camera.BoundingBoxOverlay
 import com.fireloc.fireloc.camera.Detection
 import com.fireloc.fireloc.camera.DetectionProcessor
 import com.fireloc.fireloc.camera.FireDetectionType
-import com.fireloc.fireloc.network.DeviceRegistrationRequest // Import Network data class
-import com.fireloc.fireloc.network.RetrofitClient // Import Retrofit client
+import com.fireloc.fireloc.network.ApiClient
+import com.fireloc.fireloc.network.ApiService
+import com.fireloc.fireloc.network.DeviceRegistrationRequest
+import com.fireloc.fireloc.utils.ImageUtils
+import com.fireloc.fireloc.util.Prefs // Corrected import based on Prefs.kt
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-// import com.google.android.gms.auth.api.signin.GoogleSignInAccount // Not directly used after getting token
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.SignInButton
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
-import kotlinx.coroutines.Dispatchers // Import Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext // Import withContext
-import java.util.UUID
+// Removed: import kotlinx.coroutines.tasks.await // Not strictly needed if using addOnCompleteListener
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.max
 import kotlin.math.min
 
-@Suppress("DEPRECATION") // Suppress for deprecated GoogleSignIn classes used throughout
 class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "FireLocMainActivity"
-        // TODO: Add ACCESS_FINE_LOCATION when implementing location retrieval
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
+        // Model input size (check your actual model)
         private const val INPUT_SIZE = 640
-        private const val PREFS_NAME = "FireLocPrefs"
-        private const val KEY_DEVICE_ID = "uniqueDeviceId"
-        // Key for storing registration status, including device ID to handle multiple devices per user if needed later
-        private fun getRegistrationPrefKey(deviceId: String) = "deviceRegistered_$deviceId"
+        // Backend URLs
+        private const val REGISTER_DEVICE_URL = "https://registerdevice-pppkiwepma-uc.a.run.app"
+        private const val DETECT_URL = "https://detect-pppkjwepma-uc.a.run.app" // Keep for potential future use
+
+        // Key for storing registration status in SharedPreferences
+        private const val KEY_IS_DEVICE_REGISTERED = "is_device_registered"
     }
 
     // Views
     private lateinit var viewFinder: PreviewView
     private lateinit var boundingBoxOverlay: BoundingBoxOverlay
     private lateinit var statusText: TextView
-    private lateinit var signInButton: SignInButton
+    private lateinit var signInButton: Button
     private lateinit var signOutButton: Button
     private lateinit var registerDeviceButton: Button
 
@@ -81,73 +74,61 @@ class MainActivity : ComponentActivity() {
     private lateinit var detectionProcessor: DetectionProcessor
     private lateinit var cameraExecutor: ExecutorService
 
-    // Transformation (Local variable used instead)
+    // Coordinates Transformation
+    private val imageToViewMatrix = Matrix()
     private var sourceImageWidth: Int = 0
     private var sourceImageHeight: Int = 0
     private var sourceRotationDegrees: Int = 0
 
-    // Firebase Auth & Google Sign In
+    // Firebase & Google Auth
     private lateinit var auth: FirebaseAuth
     private lateinit var googleSignInClient: GoogleSignInClient
-    private lateinit var signInLauncher: ActivityResultLauncher<Intent>
+    private lateinit var googleSignInLauncher: ActivityResultLauncher<android.content.Intent>
 
-    // SharedPreferences
-    private lateinit var sharedPreferences: SharedPreferences
-    private var uniqueDeviceId: String? = null
+    // Networking
+    private lateinit var apiService: ApiService
+
+    // State
+    private var isDeviceRegistered: Boolean = false // Local state for registration
 
     // Permissions Launcher
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        // Check if ALL required permissions were granted
-        val allGranted = REQUIRED_PERMISSIONS.all { permission ->
-            permissions[permission] ?: false
-        }
-
-        if (!allGranted) {
-            // Explain why permissions are needed (Camera is essential)
-            // TODO: Handle location permission explanation later if added
-            Toast.makeText(this, R.string.camera_permission_denied_toast, Toast.LENGTH_LONG).show()
-            statusText.text = getString(R.string.camera_permission_required)
-            // Maybe finish() the activity if camera is absolutely required?
-        } else {
-            // Permissions granted, proceed with camera setup
-            startCamera()
-        }
+        handlePermissionsResult(permissions)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main) // This references R
-
-        sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        uniqueDeviceId = retrieveOrGenerateDeviceId() // ** Call renamed method **
-
-        auth = Firebase.auth
+        setContentView(R.layout.activity_main)
 
         initializeViews()
-        configureGoogleSignIn()
-        initializeSignInLauncher()
-        initializeDetectionProcessor()
-        cameraExecutor = Executors.newSingleThreadExecutor()
+        initializeFirebase()
+        initializeGoogleSignIn()
+        initializeNetworking()
+        loadRegistrationStatus() // Load status from Prefs
         setupButtonClickListeners()
 
-        // Check permissions right away. If not granted, request them.
-        // If granted, startCamera() will be called by the launcher callback or directly here.
-        if (!allPermissionsGranted()) {
-            requestPermissions()
-        } else {
-            startCamera() // Start camera if permissions are already granted
+        detectionProcessor = DetectionProcessor(this) { detections, width, height ->
+            // Store dimensions from the actual image processed
+            sourceImageWidth = width
+            sourceImageHeight = height
+            // Update UI on main thread
+            runOnUiThread { updateDetectionResults(detections) }
         }
+        cameraExecutor = Executors.newSingleThreadExecutor()
+
+        if (allPermissionsGranted()) {
+            startCamera()
+        } else {
+            requestPermissions()
+        }
+
+        updateUI(auth.currentUser) // Set initial UI based on auth state
     }
 
-    override fun onStart() {
-        super.onStart()
-        // Check initial login state when activity becomes visible
-        updateUI(auth.currentUser)
-    }
+    // --- Initialization Methods ---
 
-    // --- Initialization ---
     private fun initializeViews() {
         try {
             viewFinder = findViewById(R.id.viewFinder)
@@ -156,434 +137,464 @@ class MainActivity : ComponentActivity() {
             signInButton = findViewById(R.id.signInButton)
             signOutButton = findViewById(R.id.signOutButton)
             registerDeviceButton = findViewById(R.id.registerDeviceButton)
-            statusText.text = getString(R.string.initializing) // References R.string
-        } catch (e: Exception) {
+            statusText.text = getString(R.string.initializing)
+        } catch (e: IllegalStateException) { // More specific catch
             Log.e(TAG, "Error finding views. Check IDs in activity_main.xml", e)
-            Toast.makeText(this, R.string.layout_error_toast, Toast.LENGTH_LONG).show() // References R.string
-            finish() // Exit if layout is broken
+            Toast.makeText(this, "Layout Error", Toast.LENGTH_LONG).show()
+            finish() // Can't proceed without views
         }
     }
 
-    private fun configureGoogleSignIn() {
-        // Ensure you have replaced YOUR_WEB_CLIENT_ID in strings.xml
-        val webClientId = getString(R.string.default_web_client_id)
-        if (webClientId == "YOUR_WEB_CLIENT_ID" || webClientId.isEmpty()) {
-            Log.e(TAG, "Web Client ID is not configured in strings.xml!")
-            Toast.makeText(this, "Sign-In Configuration Error!", Toast.LENGTH_LONG).show()
-            // Disable sign-in button if ID is missing
-            if(::signInButton.isInitialized) signInButton.isEnabled = false
-            return // Cannot proceed without Web Client ID
-        }
-
-        try {
-            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestIdToken(webClientId) // Use the validated ID
-                .requestEmail()
-                .build()
-            googleSignInClient = GoogleSignIn.getClient(this, gso)
-            if(::signInButton.isInitialized) signInButton.isEnabled = true // Ensure enabled if setup is okay
-        } catch (e: Exception) {
-            Log.e(TAG, "Error configuring Google Sign In.", e)
-            Toast.makeText(this, R.string.error_signin_setup, Toast.LENGTH_LONG).show() // References R.string
-            if(::signInButton.isInitialized) signInButton.isEnabled = false
-        }
+    private fun initializeFirebase() {
+        auth = Firebase.auth
     }
 
-    private fun initializeSignInLauncher() {
-        signInLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == Activity.RESULT_OK) {
+    private fun initializeNetworking() {
+        apiService = ApiClient.instance
+    }
+
+    private fun loadRegistrationStatus() {
+        // Load registration status from SharedPreferences
+        // Uses Context implicitly provided by the Activity
+        val prefs = getSharedPreferences("com.fireloc.fireloc.prefs", Context.MODE_PRIVATE) // Needs import for Context
+        isDeviceRegistered = prefs.getBoolean(KEY_IS_DEVICE_REGISTERED, false)
+        Log.d(TAG, "Loaded registration status: $isDeviceRegistered")
+    }
+
+    private fun saveRegistrationStatus(registered: Boolean) {
+        // Save registration status to SharedPreferences
+        // Uses Context implicitly provided by the Activity
+        isDeviceRegistered = registered
+        val prefs = getSharedPreferences("com.fireloc.fireloc.prefs", Context.MODE_PRIVATE) // Needs import for Context
+        prefs.edit().putBoolean(KEY_IS_DEVICE_REGISTERED, registered).apply()
+        Log.d(TAG, "Saved registration status: $registered")
+    }
+
+
+    private fun initializeGoogleSignIn() {
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken(getString(R.string.default_web_client_id))
+            .requestEmail()
+            .build()
+        googleSignInClient = GoogleSignIn.getClient(this, gso)
+
+        googleSignInLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == RESULT_OK) {
                 val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
                 try {
-                    // Google Sign In was successful, try to get account and token
-                    val account = task.getResult(ApiException::class.java)
-                    if (account != null && account.idToken != null) {
-                        Log.d(TAG, "Google Sign In successful, firebaseAuthWithGoogle starting.")
-                        firebaseAuthWithGoogle(account.idToken!!) // Use non-null assertion after check
+                    val account = task.getResult(ApiException::class.java)!!
+                    Log.d(TAG, "Google Sign In Successful. Account ID: ${account.id}") // Log Google success
+                    val idToken = account.idToken
+                    if (idToken != null) {
+                        Log.d(TAG, "Google ID Token retrieved, attempting Firebase Auth.")
+                        firebaseAuthWithGoogle(idToken)
                     } else {
-                        // Handle rare case where account or token is null despite RESULT_OK
-                        Log.e(TAG, "GoogleSignInAccount or idToken is null after successful sign-in attempt!")
-                        Toast.makeText(this, R.string.error_getting_token, Toast.LENGTH_SHORT).show()
-                        updateUI(null) // Reflect failed state
+                        Log.w(TAG, "Google ID Token was null after successful Google Sign In.")
+                        statusText.text = getString(R.string.sign_in_failed) + " (No Token)"
+                        updateUI(null)
                     }
                 } catch (e: ApiException) {
-                    // Google Sign In failed (e.g., network error, configuration issue)
-                    Log.w(TAG, "Google sign in failed", e)
-                    updateUI(null) // Reflect failed state
-                    // Provide a more specific error message if possible based on statusCode
-                    Toast.makeText(this, "Google Sign-In Failed. Code: ${e.statusCode}", Toast.LENGTH_SHORT).show()
+                    // Log the specific API exception status code and message
+                    Log.w(TAG, "Google sign in failed: Status Code = ${e.statusCode}, Message = ${e.message}", e)
+                    statusText.text = getString(R.string.sign_in_failed) + " (API Exception: ${e.statusCode})"
+                    updateUI(null)
                 }
             } else {
-                // User cancelled the sign-in flow or another error occurred
-                Log.w(TAG, "Google Sign-In activity result was not OK. Code: ${result.resultCode}")
-                Toast.makeText(this, R.string.google_signin_failed_or_cancelled, Toast.LENGTH_SHORT).show() // References R.string
-                updateUI(null) // Reflect signed-out state
+                Log.w(TAG, "Google sign in activity cancelled or failed. Result code: ${result.resultCode}")
+                statusText.text = getString(R.string.sign_in_failed) + " (Result Code: ${result.resultCode})"
+                updateUI(null)
             }
         }
-    }
 
-    private fun initializeDetectionProcessor() {
-        detectionProcessor = DetectionProcessor(this) { detections, width, height ->
-            sourceImageWidth = width
-            sourceImageHeight = height
-            runOnUiThread { updateDetectionResults(detections) }
-        }
     }
 
     private fun setupButtonClickListeners() {
         signInButton.setOnClickListener { signIn() }
         signOutButton.setOnClickListener { signOut() }
-        registerDeviceButton.setOnClickListener {
-            uniqueDeviceId?.let { deviceId ->
-                // Check registration status BEFORE attempting to register again
-                if (sharedPreferences.getBoolean(getRegistrationPrefKey(deviceId), false)) {
-                    Toast.makeText(this, R.string.device_already_registered, Toast.LENGTH_SHORT).show() // Use String resource
-                } else {
-                    registerDevice(deviceId) // Only call register if not already registered
-                }
-            } ?: run {
-                Log.e(TAG, "Device ID is null, cannot register.")
-                Toast.makeText(this, R.string.error_device_id_missing, Toast.LENGTH_SHORT).show() // References R.string
-            }
-        }
+        registerDeviceButton.setOnClickListener { registerDeviceWithBackend() }
     }
 
-    // --- Auth ---
-    private fun firebaseAuthWithGoogle(idToken: String) {
-        val credential = GoogleAuthProvider.getCredential(idToken, null)
-        auth.signInWithCredential(credential)
-            .addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    Log.d(TAG, "Firebase Authentication successful.")
-                    updateUI(auth.currentUser)
-                    // Optional: Auto-register device after first successful sign-in?
-                    // uniqueDeviceId?.let { if (!sharedPreferences.getBoolean(getRegistrationPrefKey(it), false)) registerDevice(it) }
-                } else {
-                    Log.w(TAG, "Firebase Authentication failed.", task.exception)
-                    updateUI(null)
-                    Toast.makeText(this, R.string.error_firebase_auth_failed, Toast.LENGTH_SHORT).show() // References R.string
-                }
-            }
-    }
+    // --- Permissions Handling ---
 
-    private fun signIn() {
-        Log.d(TAG, "signIn: Launching Google Sign-In Intent")
-        // Check initialization before launching
-        if (!::googleSignInClient.isInitialized) {
-            Log.e(TAG, "GoogleSignInClient not initialized. Check configuration.")
-            Toast.makeText(this, R.string.error_signin_setup, Toast.LENGTH_SHORT).show() // References R.string
-            return
-        }
-        val signInIntent = googleSignInClient.signInIntent
-        signInLauncher.launch(signInIntent)
-    }
-
-    private fun signOut() {
-        Log.d(TAG, "signOut: Signing out user.")
-        auth.signOut() // Sign out from Firebase
-
-        // Also sign out from Google explicitly to allow account switching
-        if (::googleSignInClient.isInitialized) {
-            googleSignInClient.signOut().addOnCompleteListener(this) { task ->
-                if (task.isSuccessful) {
-                    Log.d(TAG, "Google Sign Out complete.")
-                } else {
-                    Log.w(TAG, "Google Sign Out failed.", task.exception)
-                }
-                // Update UI regardless of Google sign-out success (Firebase signout is key)
-                updateUI(null)
-                Toast.makeText(this, R.string.signed_out_toast, Toast.LENGTH_SHORT).show() // References R.string
-            }
-        } else {
-            // If GSC wasn't initialized, just update UI based on Firebase signout
-            updateUI(null)
-            Toast.makeText(this, R.string.signed_out_toast, Toast.LENGTH_SHORT).show() // References R.string
-        }
-    }
-
-    // --- Device ID ---
-    // ** Renamed method **
-    @SuppressLint("ApplySharedPref") // Suppress warning for apply() as minSdk > 9
-    private fun retrieveOrGenerateDeviceId(): String {
-        var id = sharedPreferences.getString(KEY_DEVICE_ID, null)
-        if (id == null) {
-            id = UUID.randomUUID().toString()
-            // Use commit() if you need to ensure it's saved before proceeding,
-            // otherwise apply() is fine for background saving.
-            sharedPreferences.edit().putString(KEY_DEVICE_ID, id).apply()
-            Log.i(TAG, "Generated new Device ID: $id")
-        } else {
-            Log.d(TAG, "Retrieved existing Device ID: $id")
-        }
-        return id
-    }
-
-    // --- Device Registration ---
-    private fun registerDevice(deviceId: String) {
-        val currentUser = auth.currentUser
-        if (currentUser == null) {
-            Toast.makeText(this, R.string.signin_required_to_register, Toast.LENGTH_SHORT).show() // References R.string
-            return
-        }
-
-        // Redundant check, already done in listener, but safe to keep
-        if (sharedPreferences.getBoolean(getRegistrationPrefKey(deviceId), false)) {
-            Toast.makeText(this, R.string.device_already_registered, Toast.LENGTH_SHORT).show()
-            registerDeviceButton.isEnabled = false
-            return
-        }
-
-        registerDeviceButton.isEnabled = false // Disable button during request
-        Toast.makeText(this@MainActivity, R.string.registering_device_toast, Toast.LENGTH_SHORT).show() // References R.string
-
-        lifecycleScope.launch { // Use coroutine scope for async token retrieval and network call
-            var idToken: String? = null
-            try {
-                // Get ID Token first
-                val tokenResult = currentUser.getIdToken(true).await() // Force refresh token
-                idToken = tokenResult.token
-                if (idToken == null) throw IllegalStateException("ID Token was null after retrieval.") // Handle null case
-
-                Log.d(TAG, "Got ID Token for registration: ${idToken.take(20)}...")
-
-                // Prepare Request Body
-                // TODO: Allow user input for deviceName later (e.g., from an EditText)
-                val deviceName: String? = "My FireLoc Device (${android.os.Build.MODEL})" // Example placeholder name with device model
-                val request = DeviceRegistrationRequest(deviceId, deviceName)
-                val bearerTokenString = "Bearer $idToken"
-
-                // Make Network Call using Retrofit Client
-                // Ensure BASE_URL in RetrofitClient.kt is set correctly!
-                Log.i(TAG, "Attempting to register device $deviceId via network call")
-                // Switch to IO dispatcher for network call
-                val response = withContext(Dispatchers.IO) {
-                    // Ensure RetrofitClient.instance provides ApiService correctly
-                    RetrofitClient.instance.registerDevice(bearerTokenString, request)
-                }
-
-                // Process Response (implicitly back on Main thread due to lifecycleScope)
-                if (response.isSuccessful && response.body()?.status == "success") {
-                    Log.i(TAG, "Device registration successful via network. Response: ${response.body()?.message}")
-                    Toast.makeText(this@MainActivity, R.string.registration_success_toast, Toast.LENGTH_LONG).show() // References R.string
-                    // Save registration status LOCALLY upon successful backend confirmation
-                    sharedPreferences.edit().putBoolean(getRegistrationPrefKey(deviceId), true).apply()
-                    registerDeviceButton.isEnabled = false // Keep button disabled
-                } else {
-                    // Handle both unsuccessful responses and success responses with unexpected body
-                    val errorBody = response.errorBody()?.string() ?: response.body()?.message ?: getString(R.string.unknown_error)
-                    Log.e(TAG, "Device registration failed via network: ${response.code()} - $errorBody")
-                    Toast.makeText(this@MainActivity, getString(R.string.registration_failed_toast, response.code(), errorBody), Toast.LENGTH_LONG).show() // References R.string
-                    registerDeviceButton.isEnabled = true // Re-enable button on failure
-                }
-
-            } catch (e: Exception) { // Catch exceptions from getting token or network call
-                Log.e(TAG, "Error during device registration process", e)
-                val errorMsg = when (e) {
-                    is IllegalStateException -> e.message ?: getString(R.string.error_getting_token) // Use string resource
-                    is java.net.UnknownHostException -> "Network Error: Cannot reach server. Check URL and connection."
-                    is java.net.SocketTimeoutException -> "Network Error: Connection timed out."
-                    // Add more specific exception handling if needed
-                    else -> getString(R.string.network_error_toast, e.message ?: getString(R.string.unknown_error)) // General network error
-                }
-                Toast.makeText(this@MainActivity, errorMsg, Toast.LENGTH_LONG).show()
-                registerDeviceButton.isEnabled = true // Re-enable button on any error
-            }
-        } // End Coroutine Scope
-    }
-
-
-    // --- UI Update ---
-    private fun updateUI(user: FirebaseUser?) {
-        if (user != null) {
-            // User is signed in
-            signInButton.visibility = View.GONE
-            signOutButton.visibility = View.VISIBLE
-            registerDeviceButton.visibility = View.VISIBLE
-
-            // Check registration status from SharedPreferences using the unique key
-            uniqueDeviceId?.let { deviceId ->
-                val isRegistered = sharedPreferences.getBoolean(getRegistrationPrefKey(deviceId), false)
-                registerDeviceButton.isEnabled = !isRegistered
-                if (isRegistered) {
-                    Log.d(TAG, "Device $deviceId already registered locally.")
-                }
-            } ?: run {
-                registerDeviceButton.isEnabled = false // Disable if ID is missing
-                Log.e(TAG, "uniqueDeviceId is null in updateUI, cannot check registration status.")
-            }
-
-            statusText.text = getString(R.string.status_signed_in, user.email ?: "Unknown User") // References R.string
-        } else {
-            // User is signed out
-            signInButton.visibility = View.VISIBLE
-            signOutButton.visibility = View.GONE
-            registerDeviceButton.visibility = View.GONE
-
-            statusText.text = getString(R.string.status_signed_out) // References R.string
-        }
-    }
-
-    // --- Permissions ---
     private fun allPermissionsGranted() = REQUIRED_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(baseContext, it) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun requestPermissions() {
-        Log.d(TAG, "Requesting permissions: ${REQUIRED_PERMISSIONS.joinToString()}")
+        Log.i(TAG, "Requesting camera permissions.")
         permissionsLauncher.launch(REQUIRED_PERMISSIONS)
     }
 
-    // --- Camera & Detection ---
-    @SuppressLint("NewApi") // For CameraX APIs potentially requiring higher than minSdk (though 26 is likely fine)
-    private fun startCamera() {
-        Log.d(TAG, "Starting CameraX...")
-        // Check permissions again just before starting (belt and suspenders)
-        if (!allPermissionsGranted()) {
-            Log.w(TAG, "startCamera called but permissions are not granted.")
-            requestPermissions() // Request again if somehow lost
+
+    private fun handlePermissionsResult(permissions: Map<String, Boolean>) {
+        val allGranted = permissions.entries.all { it.key in REQUIRED_PERMISSIONS && it.value }
+        if (allGranted) {
+            Log.i(TAG, "Camera permission granted.")
+            startCamera()
+        } else {
+            Log.w(TAG, "Camera permission denied.")
+            Toast.makeText(this, "Camera permission is required to run detection.", Toast.LENGTH_LONG).show()
+            statusText.text = getString(R.string.permissions_required)
+            // Consider finishing the activity or disabling camera features
+            finish() // Example: Close app if permission denied
+        }
+    }
+
+    // --- Authentication Logic ---
+
+    private fun signIn() {
+        Log.i(TAG, "Initiating Google Sign-In.")
+        statusText.text = getString(R.string.signing_in)
+        val signInIntent = googleSignInClient.signInIntent
+        googleSignInLauncher.launch(signInIntent)
+    }
+
+    private fun signOut() {
+        Log.i(TAG, "Signing out.")
+        statusText.text = "Signing Out..." // Give feedback
+        auth.signOut()
+        googleSignInClient.signOut().addOnCompleteListener(this) { task ->
+            if (task.isSuccessful) {
+                Log.d(TAG, "Google Sign-Out task successful.")
+            } else {
+                Log.w(TAG, "Google Sign-Out task failed.")
+            }
+            // Update UI regardless of Google sign-out success, as Firebase sign-out already happened
+            updateUI(null)
+            Toast.makeText(this, "Signed Out", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun firebaseAuthWithGoogle(idToken: String) {
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
+        Log.d(TAG, "Calling Firebase auth.signInWithCredential...") // Log before call
+        statusText.text = "Authenticating with Firebase..." // Feedback
+        auth.signInWithCredential(credential)
+            .addOnCompleteListener(this) { task ->
+                Log.d(TAG, "Firebase signInWithCredential complete. Task Successful: ${task.isSuccessful}") // Log completion status
+                if (task.isSuccessful) {
+                    val user = auth.currentUser
+                    // Log user details right after success
+                    Log.d(TAG, "Firebase signInWithCredential:success. User: ${user?.uid}, Email: ${user?.email}")
+                    updateUI(user)
+                } else {
+                    // **** THIS IS THE MOST LIKELY PLACE THE ERROR OCCURS ****
+                    // Log the specific Firebase exception
+                    Log.w(TAG, "Firebase signInWithCredential:failure", task.exception)
+                    statusText.text = getString(R.string.sign_in_failed) + " (Firebase Auth Error)"
+                    // Show more specific error to user
+                    Toast.makeText(baseContext, "Firebase Authentication Failed: ${task.exception?.message}", Toast.LENGTH_LONG).show()
+                    updateUI(null)
+                }
+            }
+    }
+
+    private fun updateUI(user: FirebaseUser?) {
+        Log.d(TAG, "updateUI called with user: ${user?.uid}") // Log user passed in
+        if (user != null) {
+            // ... (rest of updateUI remains the same) ...
+            statusText.text = getString(R.string.signed_in_fmt, user.email ?: "User")
+            signInButton.visibility = View.GONE
+            signOutButton.visibility = View.VISIBLE
+            registerDeviceButton.visibility = View.VISIBLE
+            registerDeviceButton.isEnabled = !isDeviceRegistered
+            registerDeviceButton.alpha = if (isDeviceRegistered) 0.5f else 1.0f
+        } else {
+            // ... (rest of updateUI remains the same) ...
+            statusText.text = getString(R.string.signed_out)
+            signInButton.visibility = View.VISIBLE
+            signOutButton.visibility = View.GONE
+            registerDeviceButton.visibility = View.GONE
+        }
+        boundingBoxOverlay.updateDetections(emptyList())
+    }
+
+
+    // --- Device Registration Logic ---
+
+    private fun getIdToken(forceRefresh: Boolean = false, callback: (token: String?) -> Unit) {
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
+            Log.w(TAG, "Attempted to get ID token, but user is null.")
+            callback(null)
+            return
+        }
+        statusText.text = getString(R.string.getting_token)
+        currentUser.getIdToken(forceRefresh)
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val idToken = task.result?.token
+                    if (idToken == null) {
+                        Log.w(TAG, "getIdToken task successful but token is null.")
+                        statusText.text = getString(R.string.token_error)
+                        Toast.makeText(this, "Failed to retrieve auth token.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Log.d(TAG, "Successfully retrieved ID Token.")
+                    }
+                    callback(idToken)
+                } else {
+                    Log.e(TAG, "getIdToken: task failed", task.exception)
+                    statusText.text = getString(R.string.token_error)
+                    Toast.makeText(this, "Error getting authentication token.", Toast.LENGTH_SHORT).show()
+                    callback(null)
+                }
+            }
+    }
+
+    private fun registerDeviceWithBackend() {
+        val currentUser = auth.currentUser
+        if (currentUser == null) {
+            Toast.makeText(this, "Sign in required.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (isDeviceRegistered) {
+            Toast.makeText(this, "Device already registered.", Toast.LENGTH_SHORT).show()
             return
         }
 
+        statusText.text = getString(R.string.generating_device_id)
+        val deviceId = Prefs.getDeviceId(this) // Use correct package
+        Log.d(TAG, "Device ID for registration: $deviceId")
+
+        statusText.text = "Getting Auth Token..."
+        getIdToken(true) { idToken -> // Force refresh token for registration
+            if (idToken == null) {
+                statusText.text = getString(R.string.token_error) // Show error from getIdToken
+                // updateUI(currentUser) - Handled within getIdToken failure path
+                return@getIdToken
+            }
+
+            statusText.text = getString(R.string.registering_device)
+            val requestBody = DeviceRegistrationRequest(deviceId = deviceId, deviceName = null) // name is optional
+            val authHeader = "Bearer $idToken"
+
+            lifecycleScope.launch { // Use coroutine for network call
+                try {
+                    Log.d(TAG, "Calling registerDevice: $REGISTER_DEVICE_URL")
+                    val response = apiService.registerDevice(REGISTER_DEVICE_URL, authHeader, requestBody)
+
+                    if (response.isSuccessful) {
+                        Log.i(TAG, "Device registration successful (Code: ${response.code()})")
+                        saveRegistrationStatus(true) // Save state
+                        updateUI(currentUser) // Update button state immediately
+                        Toast.makeText(applicationContext, "Device Registered!", Toast.LENGTH_SHORT).show()
+                        // Status text updated by updateUI
+                    } else {
+                        // Log detailed error
+                        val errorBody = response.errorBody()?.string() ?: "No response body"
+                        Log.e(TAG, "Device registration failed (Code: ${response.code()}): $errorBody")
+                        statusText.text = getString(R.string.registration_failed)
+                        Toast.makeText(applicationContext, "Registration failed: ${response.message()} (${response.code()})", Toast.LENGTH_LONG).show()
+                        // Don't save registration status as true if it failed
+                        updateUI(currentUser) // Reset status text / UI state
+                    }
+                } catch (e: Exception) { // Catch network or other exceptions
+                    Log.e(TAG, "Exception during device registration call", e)
+                    statusText.text = getString(R.string.registration_error_fmt, e.localizedMessage ?: "Unknown Error")
+                    Toast.makeText(applicationContext, "Registration Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    updateUI(currentUser) // Reset status text / UI state
+                }
+            }
+        }
+    }
+
+
+    // --- CameraX Logic ---
+
+    @SuppressLint("UnsafeOptInUsageError")
+    private fun startCamera() {
+        Log.d(TAG, "Attempting to start CameraX.")
+        // Update status based on auth state
+        statusText.text = if (auth.currentUser != null) getString(R.string.initializing) else getString(R.string.signed_out)
+
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
         cameraProviderFuture.addListener({
             try {
                 val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
-                val preview = Preview.Builder().build().also {
-                    it.surfaceProvider = viewFinder.surfaceProvider
-                }
 
-                @Suppress("DEPRECATION")
-                val imageAnalyzer = ImageAnalysis.Builder()
-                    .setTargetResolution(Size(1280, 720)) // Example resolution
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                // --- Preview Use Case ---
+                val preview = Preview.Builder()
+                    .setTargetResolution(Size(1280, 720)) // Define target resolution
+                    // .setTargetAspectRatio(AspectRatio.RATIO_16_9) // Or Aspect Ratio
                     .build()
                     .also {
-                        it.setAnalyzer(cameraExecutor) { imageProxy ->
-                            // Only process if detectionProcessor is initialized
-                            if (::detectionProcessor.isInitialized) {
-                                imageProxy.imageInfo?.let { info ->
-                                    sourceRotationDegrees = info.rotationDegrees
-                                } ?: run { sourceRotationDegrees = 0; Log.w(TAG, "ImageInfo null") }
-                                detectionProcessor.processImageProxy(imageProxy)
-                            } else {
-                                Log.w(TAG,"DetectionProcessor not ready, closing imageProxy.")
-                                imageProxy.close() // Close if not processing
-                            }
+                        it.setSurfaceProvider(viewFinder.surfaceProvider)
+                    }
+
+                // --- Image Analysis Use Case ---
+                val imageAnalyzer = ImageAnalysis.Builder()
+                    .setTargetResolution(Size(1280, 720)) // Match preview if performance allows
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                    .build()
+                    .also {
+                        it.setAnalyzer(cameraExecutor) { imageProxy -> // Use lambda shorthand
+                            // Store rotation for coordinate mapping
+                            sourceRotationDegrees = imageProxy.imageInfo.rotationDegrees
+                            // Process the image (DetectionProcessor handles closing the proxy)
+                            detectionProcessor.processImageProxy(imageProxy)
                         }
                     }
 
                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                cameraProvider.unbindAll() // Unbind previous use cases before binding new ones
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
-                Log.i(TAG, "CameraX use cases bound successfully.")
-                // UI status update happens via onStart or subsequent detection results
-                updateUI(auth.currentUser) // Ensure UI reflects correct state initially
+
+                // Unbind before rebinding
+                cameraProvider.unbindAll()
+
+                // Bind use cases
+                cameraProvider.bindToLifecycle(
+                    this, cameraSelector, preview, imageAnalyzer
+                )
+                Log.i(TAG, "CameraX bound successfully.")
+                // Update status only if user is logged in
+                if (auth.currentUser != null) {
+                    statusText.text = getString(R.string.scanning_status)
+                }
 
             } catch (exc: Exception) {
-                Log.e(TAG, "CameraX binding failed", exc)
-                statusText.text = getString(R.string.camera_error) // References R.string
-                Toast.makeText(this, getString(R.string.camera_start_error_toast, exc.message ?: "Unknown Cause"), Toast.LENGTH_SHORT).show() // References R.string
+                Log.e(TAG, "Use case binding failed", exc)
+                statusText.text = getString(R.string.camera_error)
+                Toast.makeText(this, "Failed to start camera.", Toast.LENGTH_SHORT).show()
             }
-        }, ContextCompat.getMainExecutor(this)) // Run listener on main thread
+        }, ContextCompat.getMainExecutor(this)) // Run on main thread
     }
 
+    // --- Detection Result UI Update ---
+
     private fun updateDetectionResults(detections: List<Detection>) {
-        // Only proceed if view/data is ready
-        if (boundingBoxOverlay.width == 0 || boundingBoxOverlay.height == 0 || sourceImageWidth == 0 || sourceImageHeight == 0) {
-            Log.v(TAG, "Overlay dimensions or source image dimensions not ready yet. Skipping draw.")
-            if (boundingBoxOverlay.width == 0 || boundingBoxOverlay.height == 0) {
-                boundingBoxOverlay.updateDetections(emptyList()) // Clear old boxes if view gone
-            }
+        // Do not process/display if user is not signed in
+        if (auth.currentUser == null) {
+            boundingBoxOverlay.updateDetections(emptyList())
             return
         }
 
-        // Calculate matrix locally
-        val transformMatrix = calculateTransformMatrix(sourceImageWidth, sourceImageHeight, boundingBoxOverlay.width, boundingBoxOverlay.height, sourceRotationDegrees)
+        // Ensure view/image dimensions are valid before calculating transform
+        if (boundingBoxOverlay.width == 0 || boundingBoxOverlay.height == 0 || sourceImageWidth == 0 || sourceImageHeight == 0) {
+            return // Avoid division by zero or incorrect mapping
+        }
 
-        val viewDetections = detections.mapNotNull { detection ->
-            val normalizedBox = detection.boundingBox
-            val viewRect = RectF()
-            val modelInputRect = RectF(
-                normalizedBox.left * INPUT_SIZE,
-                normalizedBox.top * INPUT_SIZE,
-                normalizedBox.right * INPUT_SIZE,
-                normalizedBox.bottom * INPUT_SIZE
+        // Calculate the matrix to transform model coords -> view coords
+        imageToViewMatrix.set(
+            calculateTransformMatrix(
+                sourceImageWidth, sourceImageHeight,
+                boundingBoxOverlay.width, boundingBoxOverlay.height,
+                sourceRotationDegrees
             )
-            transformMatrix.mapRect(viewRect, modelInputRect)
-            // Clamp after transform
+        )
+
+        // Transform detection boxes for display
+        val viewDetections = detections.mapNotNull { detection ->
+            val normalizedBox = detection.boundingBox // Normalized (0.0-1.0) relative to model input
+            val viewRect = RectF()
+
+            // Map from model input pixel space (0-INPUT_SIZE) to view space
+            val modelInputRect = RectF(
+                normalizedBox.left * INPUT_SIZE, normalizedBox.top * INPUT_SIZE,
+                normalizedBox.right * INPUT_SIZE, normalizedBox.bottom * INPUT_SIZE
+            )
+            imageToViewMatrix.mapRect(viewRect, modelInputRect)
+
+            // Clamp the final view coordinates to the overlay bounds
             viewRect.left = max(0f, viewRect.left)
             viewRect.top = max(0f, viewRect.top)
             viewRect.right = min(boundingBoxOverlay.width.toFloat(), viewRect.right)
             viewRect.bottom = min(boundingBoxOverlay.height.toFloat(), viewRect.bottom)
 
+            // Create new Detection with View Coordinates, skip if rect is invalid
             if (viewRect.width() > 0 && viewRect.height() > 0) {
                 Detection(detection.type, detection.confidence, viewRect)
-            } else { null } // Skip if rect has no area after clamping
-        }
-
-        boundingBoxOverlay.updateDetections(viewDetections)
-
-        // Update status text ONLY IF user is signed in
-        if (auth.currentUser != null) {
-            if (viewDetections.isNotEmpty()) {
-                val fireCount = viewDetections.count { it.type == FireDetectionType.FIRE }
-                val smokeCount = viewDetections.count { it.type == FireDetectionType.SMOKE }
-                val maxConfidence = viewDetections.maxOfOrNull { it.confidence } ?: 0f
-                statusText.text = getString(R.string.detection_status_format, fireCount, smokeCount, (maxConfidence * 100).toInt()) // References R.string
             } else {
-                val procTime = detectionProcessor.getLastProcessingTimeMs()
-                statusText.text = getString(R.string.scanning_status_with_time, procTime) // References R.string
+                Log.w(TAG, "Skipping detection with invalid viewRect: $viewRect from norm: $normalizedBox")
+                null
             }
         }
-        // If signed out, updateUI() handles the status text
+
+        // Update the overlay
+        boundingBoxOverlay.updateDetections(viewDetections)
+
+        // Update status text
+        if (detections.isNotEmpty()) { // Use original detections list to check if *any* were found
+            val fireCount = detections.count { it.type == FireDetectionType.FIRE }
+            val smokeCount = detections.count { it.type == FireDetectionType.SMOKE }
+            // Find the highest confidence among *all* valid detections before filtering
+            val maxConfidence = detections.maxOfOrNull { it.confidence } ?: 0f
+            statusText.text = getString(R.string.detection_status_format, fireCount, smokeCount, (maxConfidence * 100).toInt())
+        } else {
+            val procTime = detectionProcessor.getLastProcessingTimeMs()
+            statusText.text = "${getString(R.string.scanning_status)} (${procTime}ms)"
+        }
     }
 
+    /**
+     * Calculates matrix to transform coordinates from the model's input space (INPUT_SIZE)
+     * to the destination View's coordinate space, accounting for image rotation and scaling.
+     */
     private fun calculateTransformMatrix(
-        srcWidth: Int, srcHeight: Int, dstWidth: Int, dstHeight: Int, rotation: Int
+        srcWidth: Int, srcHeight: Int, // Image buffer dimensions
+        dstWidth: Int, dstHeight: Int, // View dimensions
+        rotation: Int                  // Buffer rotation (0, 90, 180, 270)
     ): Matrix {
-        val matrix = Matrix()
-        val uprightSrcWidth = if (rotation == 90 || rotation == 270) srcHeight.toFloat() else srcWidth.toFloat()
-        val uprightSrcHeight = if (rotation == 90 || rotation == 270) srcWidth.toFloat() else srcHeight.toFloat()
+        val transformMatrix = Matrix()
 
-        // Check for zero dimensions to avoid division by zero
-        if (uprightSrcWidth == 0f || uprightSrcHeight == 0f || INPUT_SIZE == 0) {
-            Log.e(TAG, "Cannot calculate transform matrix with zero dimensions.")
-            return matrix // Return identity matrix
+        // Get dimensions of the source image if it were upright
+        val (uprightSrcWidth, uprightSrcHeight) = if (rotation == 90 || rotation == 270) {
+            srcHeight.toFloat() to srcWidth.toFloat()
+        } else {
+            srcWidth.toFloat() to srcHeight.toFloat()
         }
 
+        // Calculate the scale needed to fit the upright source into the destination view
+        // while maintaining aspect ratio (letterbox/pillarbox - min scale factor)
         val scaleX = dstWidth.toFloat() / uprightSrcWidth
         val scaleY = dstHeight.toFloat() / uprightSrcHeight
         val scale = min(scaleX, scaleY)
-        val scaledBufferWidth = uprightSrcWidth * scale
-        val scaledBufferHeight = uprightSrcHeight * scale
-        val dx = (dstWidth - scaledBufferWidth) / 2f
-        val dy = (dstHeight - scaledBufferHeight) / 2f
-        val modelToViewScaleX = scaledBufferWidth / INPUT_SIZE
-        val modelToViewScaleY = scaledBufferHeight / INPUT_SIZE
-        matrix.postScale(modelToViewScaleX, modelToViewScaleY)
-        matrix.postTranslate(dx, dy)
-        return matrix
+
+        // Calculate the translation to center the scaled image within the destination view
+        val scaledImageWidth = uprightSrcWidth * scale
+        val scaledImageHeight = uprightSrcHeight * scale
+        val dx = (dstWidth - scaledImageWidth) / 2f
+        val dy = (dstHeight - scaledImageHeight) / 2f
+
+        // Combine transformations:
+        // Map Model Input (0-INPUT_SIZE) -> Scaled Dest -> Centered Dest
+        val finalMatrix = Matrix()
+        // Correct: Scale FROM model input size TO the size it occupies in the destination view
+        finalMatrix.postScale(scale * uprightSrcWidth / INPUT_SIZE, scale * uprightSrcHeight / INPUT_SIZE)
+        finalMatrix.postTranslate(dx, dy)
+
+        // This matrix now maps directly from model input pixel coordinates (0 to INPUT_SIZE)
+        // to the correctly scaled and centered view coordinates.
+        return finalMatrix
+    }
+
+
+    // --- Lifecycle ---
+
+    override fun onStart() {
+        super.onStart()
+        // Check initial auth state when activity starts/resumes
+        val currentUser = auth.currentUser
+        Log.d(TAG, "onStart called. Current Firebase user: ${currentUser?.uid}")
+        // Note: Don't call updateUI(currentUser) here directly if it causes race conditions.
+        // Rely on the auth callbacks primarily. If needed, use a flag or check timestamps.
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        Log.d(TAG, "onDestroy called.")
-        // Shut down the executor service gracefully
+        // Shut down the background executor
         if (::cameraExecutor.isInitialized && !cameraExecutor.isShutdown) {
-            try {
-                cameraExecutor.shutdown()
-                // Optionally wait for tasks to finish
-                // if (!cameraExecutor.awaitTermination(50, TimeUnit.MILLISECONDS)) {
-                //    cameraExecutor.shutdownNow();
-                // }
-            } catch (e: InterruptedException) {
-                cameraExecutor.shutdownNow()
-                Thread.currentThread().interrupt()
-            }
+            cameraExecutor.shutdown()
+            Log.d(TAG,"Camera executor shutdown.")
         }
-        // Release detection processor resources (closes ONNX model)
+        // Release the detection processor (closes the model)
         if (::detectionProcessor.isInitialized) {
-            detectionProcessor.release()
+            detectionProcessor.release() // Handles model.close()
         }
-        Log.d(TAG, "MainActivity onDestroy: Resources potentially released.")
+        Log.d(TAG, "MainActivity onDestroy completed.")
     }
-}
+
+
+} // End of MainActivity class

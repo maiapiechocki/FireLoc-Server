@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "498459726219-lol9q1n9pf70o2kajjjpte0ab2nl1htq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.FireLoc.Fireloc",
+            "certificate_hash": "561f6f5e7378ab1ffaecd6846c6e68124e001523"
+          }
+        },
+        {
           "client_id": "498459726219-4n5v3ahpg384akn80kf9pvh1tha7drps.apps.googleusercontent.com",
           "client_type": 3
         }

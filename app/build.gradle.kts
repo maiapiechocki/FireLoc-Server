@@ -10,7 +10,7 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.fireloc.fireloc"
+        applicationId = "com.FireLoc.Fireloc"
         minSdk = 26
         targetSdk = 34
         versionCode = 1

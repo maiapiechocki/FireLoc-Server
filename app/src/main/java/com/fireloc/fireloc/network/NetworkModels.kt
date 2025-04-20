@@ -1,43 +1,65 @@
-package com.fireloc.fireloc.network // Make sure package name is correct
+package com.fireloc.fireloc.network
+
+import com.google.gson.annotations.SerializedName
+
+// --- Models for the /detect endpoint ---
 
 /**
- * Data class for the request body of the /registerDevice endpoint.
+ * Data class for the request body of the /detect endpoint.
+ * Matches the structure expected by the backend guideline.
  */
-data class DeviceRegistrationRequest(
-    val deviceId: String,
-    val deviceName: String? // Optional user-friendly name
-)
-
-/**
- * Data class for the success response body of the /registerDevice endpoint.
- */
-data class DeviceRegistrationResponse(
-    val status: String, // e.g., "success"
-    val message: String // e.g., "Device registered successfully."
-)
-
-// TODO: Add data classes for /detect endpoint later
-/*
-data class LocationData(val latitude: Double, val longitude: Double) // Changed to Double
-
 data class DetectRequest(
     val deviceId: String,
-    val image_base64: String,
-    val timestamp_ms: Long, // Changed to Long
-    val location: LocationData,
-    val mobile_detected: Boolean
+    val image_base64: String, // Base64 encoded image string
+    val timestamp_ms: Long, // Timestamp when image was captured/sent
+    val location: LocationData?, // Device location (nullable if not available)
+    val mobile_detected: Boolean // Flag indicating if mobile detection triggered send
 )
 
+/**
+ * Represents the location data within the DetectRequest.
+ */
+data class LocationData(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracy: Float? = null // Optional accuracy
+)
+
+
+/**
+ * Represents a single detection result from the backend's cloud model.
+ * Matches the structure expected by the backend guideline.
+ */
 data class DetectionResult(
-    val class_id: Int,
-    val confidence: Float, // Changed to Float
-    val box_normalized: List<Float> // Changed to List<Float>
+    val class_id: Int, // 0 for smoke, 1 for fire (confirm with Arjun)
+    val confidence: Float,
+    val box_normalized: List<Float> // [left, top, right, bottom] normalized 0.0-1.0
 )
 
+/**
+ * Data class for the response body of the /detect endpoint.
+ * Nullable fields allow handling potential errors or cases where detection didn't run.
+ * Matches the structure expected by the backend guideline.
+ */
 data class DetectResponse(
-    val status: String?, // Make nullable for error cases?
-    val detected: Boolean?, // Make nullable for error cases?
-    val results: List<DetectionResult>?, // Make nullable for error cases?
-    val error: String? // Field for error message
+    val status: String?, // e.g., "processed", "error"
+    val detected: Boolean?, // Was anything detected by the cloud model?
+    val results: List<DetectionResult>?, // List of detections if detected=true
+    val error: String? // Error message if status is "error"
 )
-*/
+
+
+/**
+ * Data class for the response body of the /registerDevice endpoint (if it sends one).
+ * Currently, we expect only success/failure via HTTP status code, but defining
+ * this is good practice in case the backend adds a response body later.
+ */
+data class DeviceRegistrationResponse(
+    val status: String, // e.g., "success", "already_registered", "error"
+    val message: String? = null
+)
+
+// --- REMOVED duplicate RetrofitClient object ---
+// object RetrofitClient { // <-- DELETE THIS BLOCK
+//     // Placeholder - The actual implementation is in ApiClient.kt
+// }
