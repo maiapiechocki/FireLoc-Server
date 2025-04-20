@@ -1,4 +1,4 @@
-package com.fireloc.fireloc.network
+package com.fireloc.fireloc.network // Ensure this package name is correct
 
 import retrofit2.Response
 import retrofit2.http.Body
@@ -8,15 +8,20 @@ import retrofit2.http.Url
 
 interface ApiService {
 
-    // Use @Url because the base URL might not be common or easily determined
-    // for separate Cloud Functions/Run services. Pass the full URL here.
-    @POST // POST to the URL passed in the 'url' parameter
+    // Device Registration
+    @POST
     suspend fun registerDevice(
-        @Url url: String, // Pass the full registration URL here
-        @Header("Authorization") authToken: String, // Format: "Bearer <ID_TOKEN>"
+        @Url url: String, // Full URL for registration
+        @Header("Authorization") authToken: String,
         @Body registrationData: DeviceRegistrationRequest
-    ): Response<Unit> // Expects simple success (2xx) or failure (4xx, 5xx)
+    ): Response<Unit> // Expecting HTTP status code for success/failure
 
-    // Add other endpoints here later if needed, potentially using @Url as well
-    // e.g., suspend fun sendDetectionData(@Url url: String, ...)
+    // **** ADDED: Detection Endpoint ****
+    @POST
+    suspend fun detect(
+        @Url url: String, // Full URL for detection
+        @Header("Authorization") authToken: String,
+        @Body detectRequestData: DetectRequest
+    ): Response<DetectResponse> // Expecting a response body defined by DetectResponse
+
 }
