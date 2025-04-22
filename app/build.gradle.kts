@@ -72,6 +72,7 @@ android {
         abortOnError = false
         checkReleaseBuilds = true
     }
+    buildToolsVersion = "34.0.0"
 }
 
 dependencies {

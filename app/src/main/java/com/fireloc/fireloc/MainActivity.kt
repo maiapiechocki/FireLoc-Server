@@ -61,8 +61,8 @@ class MainActivity : ComponentActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION
         )
         private const val INPUT_SIZE = 640
-        private const val REGISTER_DEVICE_URL = "https://registerdevice-pppkjwepma-uc.a.run.app"
-        private const val DETECT_URL = "https://detect-pppkjwepma-uc.a.run.app"
+        private const val REGISTER_DEVICE_URL = "https://registerdevice-pppkiwepma-uc.a.run.app"
+        private const val DETECT_URL = "https://detect-pppkiwepma-uc.a.run.app"
         private const val KEY_IS_DEVICE_REGISTERED = "is_device_registered"
     }
 
