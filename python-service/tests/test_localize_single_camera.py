@@ -1,5 +1,7 @@
 # python-service/tests/test_localize_single_camera.py
 
+# Run: pytest tests/test_localize_single_camera.py
+
 import pytest
 from app import app as flask_app
 import json
@@ -51,7 +53,7 @@ def test_invalid_camera_params(client):
 def test_valid_topomono_call(client):
     payload = {
         "algorithm": "TopoMono",
-        "image_gcs_uri": "tests/data/real_image.jpg",
+        "image_gcs_uri": "tests/data/fire.jpg",
         "detection_pixel": {"x": 10, "y": 20},
         "camera_params": {
             "lat": 34.07,
@@ -75,7 +77,7 @@ def test_valid_topomono_call(client):
 def test_valid_dmt_call(client):
     payload = {
         "algorithm": "DMT",
-        "image_gcs_uri": "tests/data/real_image.jpg",
+        "image_gcs_uri": "tests/data/fire.jpg",
         "detection_pixel": {"x": 50, "y": 80},
         "camera_params": {
             "lat": 34.10,
