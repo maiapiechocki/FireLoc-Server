@@ -41,20 +41,17 @@ def test_invalid_camera_params(client):
         "algorithm": "TopoMono",
         "image_gcs_uri": "path/to/image.jpg",
         "detection_pixel": {"x": 100, "y": 100},
-        "camera_params": {"lat": 34.07},  # missing fields
+        "camera_params": {"lat": 34.07},
         "dem_identifier": "USGS_one_meter_x36y378_CA_LosAngeles_2016"
     }
     res = client.post("/localize_single_camera", json=payload)
     assert res.status_code == 400
     assert "camera_params" in res.get_json()["message"]
 
-def test_valid_topomono_call_mocked(client, mocker):
-    mocker.patch("utils.dem.load_dem_by_id", return_value=([[1, 2], [3, 4]], (0, 1, 0, 0, 0, -1)))
-    mocker.patch("algorithms.interface.run_topomono", return_value=(34.01, -118.02, True))
-
+def test_valid_topomono_call(client):
     payload = {
         "algorithm": "TopoMono",
-        "image_gcs_uri": "path/to/image.jpg",
+        "image_gcs_uri": "tests/data/real_image.jpg",
         "detection_pixel": {"x": 10, "y": 20},
         "camera_params": {
             "lat": 34.07,
@@ -68,22 +65,17 @@ def test_valid_topomono_call_mocked(client, mocker):
         },
         "dem_identifier": "USGS_one_meter_x36y378_CA_LosAngeles_2016"
     }
-
     res = client.post("/localize_single_camera", data=json.dumps(payload), content_type='application/json')
     data = res.get_json()
     assert res.status_code == 200
     assert data["status"] == "success"
-    assert data["latitude"] == 34.01
-    assert data["longitude"] == -118.02
+    assert isinstance(data["latitude"], float)
+    assert isinstance(data["longitude"], float)
 
-def test_valid_dmt_call_mocked(client, mocker):
-    mocker.patch("utils.dem.load_dem_by_id", return_value=([[5, 6], [7, 8]], (0, 1, 0, 0, 0, -1)))
-    mocker.patch("utils.image.load_image", return_value=[[255, 255], [255, 255]])
-    mocker.patch("algorithms.interface.run_dmt", return_value=(34.11, -118.22, True))
-
+def test_valid_dmt_call(client):
     payload = {
         "algorithm": "DMT",
-        "image_gcs_uri": "http://example.com/image.jpg",
+        "image_gcs_uri": "tests/data/real_image.jpg",
         "detection_pixel": {"x": 50, "y": 80},
         "camera_params": {
             "lat": 34.10,
@@ -97,17 +89,14 @@ def test_valid_dmt_call_mocked(client, mocker):
         },
         "dem_identifier": "USGS_one_meter_x36y378_CA_LosAngeles_2016"
     }
-
     res = client.post("/localize_single_camera", data=json.dumps(payload), content_type='application/json')
     data = res.get_json()
     assert res.status_code == 200
     assert data["status"] == "success"
-    assert data["latitude"] == 34.11
-    assert data["longitude"] == -118.22
+    assert isinstance(data["latitude"], float)
+    assert isinstance(data["longitude"], float)
 
-def test_valid_localize_triangulate_call_mocked(client, mocker):
-    mocker.patch("algorithms.triangulate.run_localize_triangulate", return_value=(34.1234, -118.5678, True))
-
+def test_valid_localize_triangulate_call(client):
     payload = {
         "camera_observations": [
             {
@@ -136,19 +125,17 @@ def test_valid_localize_triangulate_call_mocked(client, mocker):
                 },
                 "detection_pixel": {"x": 300, "y": 250}
             }
-        ]
+        ],
+        "dem_identifier": "USGS_one_meter_x36y378_CA_LosAngeles_2016"
     }
-
     res = client.post("/localize_triangulate", data=json.dumps(payload), content_type='application/json')
     data = res.get_json()
     assert res.status_code == 200
     assert data["status"] == "success"
-    assert data["latitude"] == 34.1234
-    assert data["longitude"] == -118.5678
+    assert isinstance(data["latitude"], float)
+    assert isinstance(data["longitude"], float)
 
-def test_valid_firetri_call_mocked(client, mocker):
-    mocker.patch("algorithms.triangulate.run_firetri", return_value=(34.2345, -118.6789, True))
-
+def test_valid_firetri_call(client):
     payload = {
         "camera_observations": [
             {
@@ -177,12 +164,12 @@ def test_valid_firetri_call_mocked(client, mocker):
                 },
                 "detection_pixel": {"x": 410, "y": 310}
             }
-        ]
+        ],
+        "dem_identifier": "USGS_one_meter_x36y378_CA_LosAngeles_2016"
     }
-
     res = client.post("/firetri", data=json.dumps(payload), content_type='application/json')
     data = res.get_json()
     assert res.status_code == 200
     assert data["status"] == "success"
-    assert data["latitude"] == 34.2345
-    assert data["longitude"] == -118.6789
+    assert isinstance(data["latitude"], float)
+    assert isinstance(data["longitude"], float)
