@@ -1,23 +1,25 @@
 plugins {
-    // Apply necessary plugins using aliases from libs.versions.toml
+    // Keep using aliases here if they work, otherwise use full plugin IDs
+    // Example: id("com.android.application")
+    // Example: id("kotlin-android")
+    // Example: id("com.google.gms.google-services")
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
-    alias(libs.plugins.googleGmsServices) // Apply Google Services plugin HERE
+    alias(libs.plugins.googleGmsServices)
 }
 
 android {
-    namespace = "com.fireloc.fireloc" // Ensure this matches your package
-    compileSdk = 34 // Use version from libs.versions.toml if defined
+    namespace = "com.fireloc.fireloc"
+    compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.fireloc.fireloc" // Corrected package name casing if needed
-        minSdk = 26 // Use version from libs.versions.toml if defined
-        targetSdk = 34 // Use version from libs.versions.toml if defined
+        applicationId = "com.fireloc.fireloc"
+        minSdk = 26
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Keep NDK block for ONNX runtime
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
         }
@@ -30,12 +32,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Enable BuildConfig for release if needed for logging check
-            // buildConfigField("boolean", "DEBUG", "false")
         }
         debug {
             isMinifyEnabled = false
-            // Enable BuildConfig for debug if needed for logging check
             buildConfigField("boolean", "DEBUG", "true")
         }
     }
@@ -47,11 +46,10 @@ android {
         jvmTarget = "11"
     }
     buildFeatures {
-        viewBinding = true // Keep if using ViewBinding
-        buildConfig = true // Enable BuildConfig for debug logging check
+        viewBinding = true
+        buildConfig = true
     }
     sourceSets {
-        // Keep assets if your ONNX model is in src/main/assets
         getByName("main") {
             assets.srcDirs("src/main/assets")
         }
@@ -62,7 +60,6 @@ android {
             excludes += "META-INF/LICENSE.md"
             excludes += "META-INF/NOTICE.md"
         }
-        // Keep pickFirsts for ONNX Runtime native libs
         jniLibs.pickFirsts.addAll(listOf(
             "lib/arm64-v8a/libc++_shared.so",
             "lib/armeabi-v7a/libc++_shared.so"
@@ -72,48 +69,76 @@ android {
         abortOnError = false
         checkReleaseBuilds = true
     }
-    buildToolsVersion = "34.0.0"
+    buildToolsVersion = "34.0.0" // Or your specific version
 }
 
+// ========================================================================
+//                        DEPENDENCIES BLOCK (REPLACED ALIASES)
+// ========================================================================
 dependencies {
+    // Define versions (adjust as necessary or get from your libs.versions.toml)
+    val coreKtxVersion = "1.13.1"
+    val appcompatVersion = "1.7.0"
+    val constraintlayoutVersion = "2.1.4"
+    val firebaseBomVersion = "33.1.0" // Use the latest BOM
+    val playServicesAuthVersion = "21.2.0"
+    val playServicesLocationVersion = "21.3.0" // Direct version for location
+    val retrofitVersion = "2.11.0" // Example version, use your intended one
+    val retrofitGsonConverterVersion = "2.11.0" // Should match retrofit
+    val okhttpLoggingVersion = "4.12.0" // Example version
+    val coroutinesVersion = "1.8.1" // Example version for coroutines core & play
+    val cameraxVersion = "1.3.3" // Example version
+    val lifecycleVersion = "2.8.1" // Example version
+    val activityKtxVersion = "1.9.0" // Example version
+    val onnxRuntimeVersion = "1.18.0" // Example version
+    val junitVersion = "4.13.2"
+    val androidxJunitVersion = "1.1.5"
+    val espressoVersion = "3.5.1"
+
+
     // --- Core AndroidX ---
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.appcompat)
-    implementation(libs.androidx.constraintlayout)
+    implementation("androidx.core:core-ktx:$coreKtxVersion")
+    implementation("androidx.appcompat:appcompat:$appcompatVersion")
+    implementation("androidx.constraintlayout:constraintlayout:$constraintlayoutVersion")
 
     // --- Firebase ---
-    implementation(platform(libs.firebase.bom)) // Firebase Bill of Materials
-    implementation(libs.firebase.auth.ktx)    // Firebase Authentication (Kotlin extensions)
+    implementation(platform("com.google.firebase:firebase-bom:$firebaseBomVersion")) // Use BOM directly
+    implementation("com.google.firebase:firebase-auth-ktx")    // Auth
     implementation("com.google.firebase:firebase-analytics-ktx") // Optional: Analytics
 
-    // --- Google Sign-In & Location ---
-    implementation(libs.play.services.auth)   // Google Sign-In SDK (via Play Services)
-    // **** ENSURE THIS IS PRESENT AND ALIAS IS CORRECT ****
-    implementation(libs.play.services.location) // Google Location Services
+    // --- Firebase App Check ---
+    implementation("com.google.firebase:firebase-appcheck-ktx") // Base
+    implementation("com.google.firebase:firebase-appcheck-playintegrity") // Play Integrity Provider
+    implementation("com.google.firebase:firebase-appcheck-debug") // Debug Provider
 
-    // --- Networking (for /registerDevice call) ---
-    implementation(libs.retrofit)             // Retrofit
-    implementation(libs.converter.gson)       // Gson converter for Retrofit
-    implementation(libs.logging.interceptor)  // OkHttp logging interceptor
+    // --- Google Play Services ---
+    implementation("com.google.android.gms:play-services-auth:$playServicesAuthVersion")   // Google Sign-In
+    implementation("com.google.android.gms:play-services-location:$playServicesLocationVersion") // <<<< LOCATION (Directly specified)
+
+    // --- Networking ---
+    implementation("com.squareup.retrofit2:retrofit:$retrofitVersion")             // Retrofit
+    implementation("com.squareup.retrofit2:converter-gson:$retrofitGsonConverterVersion") // Gson converter
+    implementation("com.squareup.okhttp3:logging-interceptor:$okhttpLoggingVersion") // OkHttp logging
 
     // --- Coroutines ---
-    implementation(libs.kotlinx.coroutines.android) // For background tasks and async operations
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion") // Base
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion") // For await()
 
     // --- CameraX ---
-    implementation(libs.androidx.camera.core)
-    implementation(libs.androidx.camera.camera2)
-    implementation(libs.androidx.camera.lifecycle)
-    implementation(libs.androidx.camera.view)
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
 
     // --- Lifecycle & Activity ---
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.ktx) // Activity KTX for registerForActivityResult etc.
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:$lifecycleVersion")
+    implementation("androidx.activity:activity-ktx:$activityKtxVersion")
 
-    // --- ONNX Runtime (Keep if YoloModel.kt is used) ---
-    implementation(libs.onnxruntime.android) // Assuming alias exists
+    // --- ONNX Runtime ---
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:$onnxRuntimeVersion") // Use specific version
 
     // --- Testing ---
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
+    testImplementation("junit:junit:$junitVersion")
+    androidTestImplementation("androidx.test.ext:junit:$androidxJunitVersion")
+    androidTestImplementation("androidx.test.espresso:espresso-core:$espressoVersion")
 }

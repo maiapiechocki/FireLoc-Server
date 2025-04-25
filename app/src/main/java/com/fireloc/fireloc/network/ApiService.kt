@@ -12,16 +12,17 @@ interface ApiService {
     @POST
     suspend fun registerDevice(
         @Url url: String, // Full URL for registration
-        @Header("Authorization") authToken: String,
+        @Header("Authorization") authToken: String, // User ID Token
         @Body registrationData: DeviceRegistrationRequest
-    ): Response<Unit> // Expecting HTTP status code for success/failure
+    ): Response<DeviceRegistrationResponse> // **** CORRECT RESPONSE TYPE ****
 
-    // **** ADDED: Detection Endpoint ****
+    // Detection Endpoint
     @POST
     suspend fun detect(
         @Url url: String, // Full URL for detection
-        @Header("Authorization") authToken: String,
+        @Header("Authorization") authToken: String, // User ID Token
+        @Header("X-Firebase-AppCheck") appCheckToken: String, // App Check Token
         @Body detectRequestData: DetectRequest
-    ): Response<DetectResponse> // Expecting a response body defined by DetectResponse
+    ): Response<DetectResponse>
 
 }

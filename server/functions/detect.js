@@ -14,7 +14,9 @@ const { firetriLocalize } = require("./fireTri"); // Assuming this returns {lati
 const CONFIDENCE_THRESHOLD = 0.85; // Example threshold
 const MODEL_FILE_NAME = "cloud_best.onnx"; // Ensure this matches the deployed model
 const TEMP_MODEL_PATH = path.join(os.tmpdir(), MODEL_FILE_NAME);
-const BUCKET_NAME = "fireloc-e68b0.appspot.com"; // Your Firebase Storage bucket
+// VVVVVV CORRECTED BUCKET NAME VVVVVV
+const BUCKET_NAME = "fireloc-e68b0.firebasestorage.app"; // CORRECTED Bucket Name based on your screenshot
+// ^^^^^^ CORRECTED BUCKET NAME ^^^^^^
 
 // --- Global State for ONNX Session Caching ---
 let sessionPromise = null;
@@ -30,11 +32,15 @@ async function loadModelOnce() {
     sessionPromise = (async () => {
         try {
             const storage = new Storage();
-            const file = storage.bucket(BUCKET_NAME).file(`models/${MODEL_FILE_NAME}`);
+            // VVVVVV CORRECTED FILE PATH (removed 'models/') VVVVVV
+            const file = storage.bucket(BUCKET_NAME).file(MODEL_FILE_NAME);
+            // ^^^^^^ CORRECTED FILE PATH (removed 'models/') ^^^^^^
 
             // Check if model exists locally in /tmp, download if not
             if (!fs.existsSync(TEMP_MODEL_PATH)) {
-                console.log(`[ONNX] Model not found locally. Downloading from gs://${BUCKET_NAME}/models/${MODEL_FILE_NAME} to ${TEMP_MODEL_PATH}`);
+                // VVVVVV Updated log message to reflect correct path VVVVVV
+                console.log(`[ONNX] Model not found locally. Downloading from gs://${BUCKET_NAME}/${MODEL_FILE_NAME} to ${TEMP_MODEL_PATH}`);
+                // ^^^^^^ Updated log message to reflect correct path ^^^^^^
                 await file.download({ destination: TEMP_MODEL_PATH });
                 console.log("[ONNX] Model downloaded successfully.");
             } else {
@@ -57,7 +63,8 @@ async function loadModelOnce() {
 }
 
 // --- Main Cloud Function Handler ---
-// Correctly exported as the module's default export
+// Correctly exported as the module's default export (if this file is directly deployed)
+// Or imported by index.js and exported from there
 module.exports = async (req, res) => {
     // 1. Basic Request Validation
     if (req.method !== "POST") {
@@ -73,6 +80,7 @@ module.exports = async (req, res) => {
     try {
         // Verify token, allowing replay is often fine for non-critical checks but consider your security needs
         await admin.appCheck().verifyToken(appCheckToken);
+         console.log("App Check token verified successfully.");
     } catch (err) {
         console.error("Invalid App Check token:", err);
         return res.status(401).send({ error: "Unauthorized: Invalid App Check token." }); // Use 401
@@ -87,6 +95,7 @@ module.exports = async (req, res) => {
     let decodedToken;
     try {
         decodedToken = await admin.auth().verifyIdToken(idToken);
+         console.log(`ID Token verified successfully for UID: ${decodedToken.uid}`);
     } catch (err) {
         console.error("Invalid Firebase ID token:", err);
          if (err.code === 'auth/id-token-expired') {
@@ -102,6 +111,7 @@ module.exports = async (req, res) => {
          console.error("Missing or invalid fields in request body:", req.body);
         return res.status(400).send({ error: "Bad Request: Missing or invalid required fields (deviceId, image_base64, timestamp_ms, location object)." });
     }
+     console.log(`Processing detect request for device: ${deviceId}, user: ${uid}`);
 
     // 5. Timestamp Validation
     const requestTimestamp = new Date(Number(timestamp_ms));
@@ -121,6 +131,7 @@ module.exports = async (req, res) => {
     let tensor;
     try {
         // Preprocess: Resize, ensure 3 channels (remove alpha), normalize, create tensor
+         console.log("Preprocessing image...");
         const { data, info } = await sharp(imageBuffer)
             .removeAlpha() // Ensure 3 channels (RGB)
             .resize(640, 640, { fit: 'fill' }) // Ensure exact 640x640
@@ -139,6 +150,7 @@ module.exports = async (req, res) => {
 
         // Create ONNX tensor [batch_size, channels, height, width]
         tensor = new ort.Tensor("float32", floatArray, [1, info.channels, info.height, info.width]);
+         console.log("Image preprocessing complete. Tensor created.");
 
     } catch (err) {
         console.error("Image preprocessing failed:", err);
@@ -158,17 +170,23 @@ module.exports = async (req, res) => {
         console.log("ONNX inference completed.");
     } catch (err) {
         console.error("ONNX inference run failed:", err);
+        // If the error is specifically the model load error, return 500
+        if (err.message === "Failed to load ONNX model.") {
+             return res.status(500).send({ error: "Internal Server Error: Failed to load AI model." });
+        }
+        // Otherwise, could be an issue during the run itself
         return res.status(500).send({ error: "Internal Server Error: Failed to run AI model inference." });
     }
 
     // 8. Process Detections
+     console.log("Processing detections from model output...");
     let fireDetected = false;
     const cloudDetections = []; // Renamed to avoid clash with module name
     const outputStride = 6; // Assuming model output format [x1, y1, x2, y2, conf, classId]
 
     // Check if outputData is valid and has expected structure
      if (!outputData || !outputData.length || outputData.length % outputStride !== 0) {
-        console.warn(`Unexpected ONNX output format or length. Length: ${outputData?.length}, Stride: ${outputStride}`);
+        console.warn(`Unexpected ONNX output format or length. Length: ${outputData?.length}, Stride: ${outputStride}. Proceeding without cloud detections.`);
         // Proceed without detections, or return an error depending on requirements
      } else {
         for (let i = 0; i < outputData.length; i += outputStride) {
@@ -180,8 +198,8 @@ module.exports = async (req, res) => {
             if (confidence >= CONFIDENCE_THRESHOLD) {
                 // Assuming classId 0 or 1 might be fire/smoke, adjust as needed
                 // You might want specific class IDs for 'fire'
-                 // if (classId === FIRE_CLASS_ID) {
-                      fireDetected = true;
+                 // Example: if (classId === FIRE_CLASS_ID) { // Define FIRE_CLASS_ID if needed
+                      fireDetected = true; // Mark fire detected if *any* detection meets threshold
                  // }
 
                 cloudDetections.push({
@@ -198,7 +216,7 @@ module.exports = async (req, res) => {
             }
         }
      }
-     console.log(`Detection processing complete. Fire detected: ${fireDetected}. Detections found: ${cloudDetections.length}`);
+     console.log(`Detection processing complete. Fire detected by cloud: ${fireDetected}. Detections found: ${cloudDetections.length}`);
 
 
     // 9. Firestore Update
@@ -207,23 +225,25 @@ module.exports = async (req, res) => {
     const deviceRef = db.collection("devices").doc(deviceId);
 
     try {
+         console.log(`Preparing Firestore updates for device ${deviceId}...`);
         if (fireDetected && cloudDetections.length > 0) {
             console.log(`Fire detected for device ${deviceId}. Performing localization and logging detection.`);
             const detectionId = `${deviceId}_${Date.now()}`; // Unique ID for the detection event
             const detectionRef = db.collection("detections").doc(detectionId);
 
-            // Attempt localization (ensure firetriLocalize handles errors)
+            // Attempt localization (ensure firetriLocalize handles errors gracefully)
             let firePositionGeoPoint = null;
              try {
                   // Assuming first detection is most relevant for localization, adjust if needed
                  const localizedPosition = await firetriLocalize(location, cloudDetections[0].box_normalized);
                  if (localizedPosition && typeof localizedPosition.latitude === 'number' && typeof localizedPosition.longitude === 'number') {
                      firePositionGeoPoint = new admin.firestore.GeoPoint(localizedPosition.latitude, localizedPosition.longitude);
+                      console.log(`Localization successful for ${deviceId}: ${firePositionGeoPoint.latitude}, ${firePositionGeoPoint.longitude}`);
                  } else {
-                     console.warn("Localization failed or returned invalid data for", deviceId);
+                     console.warn(`Localization failed or returned invalid data for ${deviceId}`);
                  }
              } catch (locErr) {
-                 console.error("Error during firetriLocalize:", locErr);
+                 console.error(`Error during firetriLocalize for ${deviceId}:`, locErr);
                  // Continue without firePosition if localization fails
              }
 
@@ -233,11 +253,12 @@ module.exports = async (req, res) => {
                 deviceId: deviceId,
                 userId: uid,
                 timestamp: admin.firestore.Timestamp.fromDate(requestTimestamp),
-                location: new admin.firestore.GeoPoint(location.latitude, location.longitude),
+                deviceLocation: new admin.firestore.GeoPoint(location.latitude, location.longitude), // Renamed for clarity
                 results: cloudDetections, // Store all detections found by cloud
                 firePosition: firePositionGeoPoint, // Store GeoPoint or null
                 mobile_detected: mobile_detected || false // Store boolean from request
             });
+             console.log(`Detection record ${detectionId} added to batch.`);
 
             // Add device status update to batch
             batch.set(deviceRef, {
@@ -245,18 +266,21 @@ module.exports = async (req, res) => {
                 location: new admin.firestore.GeoPoint(location.latitude, location.longitude),
                 status: "confirmed_fire" // More specific status
             }, { merge: true }); // Merge to preserve other fields like userId, deviceName
+             console.log(`Device status update (confirmed_fire) for ${deviceId} added to batch.`);
 
         } else {
-            console.log(`No fire detected above threshold for device ${deviceId}. Updating device status.`);
-            // --- Optional: Update device even if no fire detected ---
+            console.log(`No fire detected above threshold for device ${deviceId}. Updating device status only.`);
+            // --- Update device even if no fire detected ---
              batch.set(deviceRef, {
                  lastSeen: admin.firestore.FieldValue.serverTimestamp(),
                  location: new admin.firestore.GeoPoint(location.latitude, location.longitude),
                  status: "scanning" // Or keep previous status if preferred
              }, { merge: true });
+             console.log(`Device status update (scanning) for ${deviceId} added to batch.`);
         }
 
         // Commit all writes in the batch
+         console.log(`Attempting Firestore batch commit for device ${deviceId}...`);
         await batch.commit();
         console.log(`Firestore updates committed successfully for device ${deviceId}.`);
 
@@ -269,9 +293,10 @@ module.exports = async (req, res) => {
 
 
     // 10. Send Response
+     console.log(`Sending 200 response for device ${deviceId}.`);
     return res.status(200).json({
         status: "processed",
         detected: fireDetected, // Boolean indicating if fire was detected by cloud model
         results: cloudDetections // Array of detections found by cloud model
     });
-}; // End of module.exports
+}; // End of handler
