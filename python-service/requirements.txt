@@ -5,3 +5,11 @@ Flask>=2.0
 
 # Production WSGI server (for Docker/Cloud Run)
 gunicorn>=20.0
+
+# Tests
+pytest
+pytest-mock
+
+# To run the tests:
+# cd python-service
+# pytest tests/
